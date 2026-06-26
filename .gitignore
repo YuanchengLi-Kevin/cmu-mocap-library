@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/public/fixtures
+/instructions
 
 # next.js
 /.next/
@@ -41,3 +43,5 @@ yarn-error.log*
 next-env.d.ts
 
 AGENTS.md
+.next-dev.stderr.log
+.next-dev.stdout.log

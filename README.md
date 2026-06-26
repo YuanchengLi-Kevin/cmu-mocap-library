@@ -1,36 +1,75 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CMU Mocap Library
 
-## Getting Started
+A Next.js application for browsing and previewing retargeted CMU motion capture
+clips.
 
-First, run the development server:
+## Development
+
+Install dependencies, then run the development server:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open the app at:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```text
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The temporary fixture preview route is available at:
 
-## Learn More
+```text
+http://localhost:3000/preview-test
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Fixture Data
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Local preview fixtures live under `public/fixtures`:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```text
+public/fixtures/
+  humanoid/
+    cmu_humanoid.glb
+  manifests/
+    motion_index.json
+    motions.json
+    bvh_metadata.json
+    source.json
+  previews/
+    cmu_01_01.glb
+    cmu_01_01_in_place.glb
+    ...
+```
 
-## Deploy on Vercel
+The fixture files are a local development aid. Production metadata is expected
+to come from PostgreSQL, while production GLB files are expected to be served
+directly from object storage.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Rendering Architecture
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The preview GLBs in `public/fixtures/previews` contain motion data only. They
+include skeleton nodes, skin data, and animation clips, but they do not include
+a visible character mesh.
+
+The visible character mesh is stored once:
+
+```text
+public/fixtures/humanoid/cmu_humanoid.glb
+```
+
+Preview rendering combines these two asset types:
+
+- Load `cmu_humanoid.glb` as the visible humanoid model.
+- Load each preview GLB for its animation clip.
+- Clone the humanoid model for each preview card.
+- Apply one motion clip to each cloned humanoid.
+
+The clone step is required because skinned meshes and skeleton state should not
+be shared across multiple simultaneously animated previews.
+
+The current `/preview-test` route intentionally uses separate canvas instances
+to stress-test 12 simultaneous previews. The next rendering architecture should
+move toward a shared React Three Fiber canvas with Drei `View` regions so the
+library can render many previews with less WebGL overhead.
