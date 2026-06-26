@@ -16,6 +16,14 @@ type MotionIndexEntry = {
   description: string;
 };
 
+type PreviewMetadata = {
+  variants?: {
+    in_place?: {
+      preview_bound?: MotionPreview["previewBound"];
+    };
+  };
+};
+
 const fixtureRoot = path.join(process.cwd(), "public", "fixtures");
 const previewCount = 12;
 
@@ -29,6 +37,43 @@ function toSourceId(filename: string) {
   return `cmu:${subjectId}:${trialId}`;
 }
 
+function isNumberTuple3(value: unknown): value is [number, number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length === 3 &&
+    value.every((entry) => typeof entry === "number")
+  );
+}
+
+function isPreviewBound(value: unknown): value is MotionPreview["previewBound"] {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const bound = value as MotionPreview["previewBound"];
+
+  return (
+    isNumberTuple3(bound?.center) &&
+    isNumberTuple3(bound?.size) &&
+    typeof bound.radius === "number" &&
+    typeof bound.height === "number"
+  );
+}
+
+async function readPreviewBound(filename: string) {
+  const metadataFilename = filename.replace(/_in_place\.glb$/, ".json");
+  const metadataRaw = await readFile(
+    path.join(fixtureRoot, "previews", metadataFilename),
+    "utf8",
+  );
+  const metadata = JSON.parse(metadataRaw) as PreviewMetadata;
+  const previewBound = metadata.variants?.in_place?.preview_bound;
+
+  if (isPreviewBound(previewBound)) {
+    return previewBound;
+  }
+}
+
 async function getPreviews(): Promise<MotionPreview[]> {
   const [previewFiles, indexRaw] = await Promise.all([
     readdir(path.join(fixtureRoot, "previews")),
@@ -40,13 +85,16 @@ async function getPreviews(): Promise<MotionPreview[]> {
     motionIndex.map((motion) => [motion.source_id, motion]),
   );
 
-  return previewFiles
+  const inPlacePreviewFiles = previewFiles
     .filter((filename) => filename.endsWith("_in_place.glb"))
     .sort((a, b) => a.localeCompare(b))
-    .slice(0, previewCount)
-    .map((filename) => {
+    .slice(0, previewCount);
+
+  return Promise.all(
+    inPlacePreviewFiles.map(async (filename) => {
       const sourceId = toSourceId(filename);
       const metadata = metadataBySourceId.get(sourceId);
+      const previewBound = await readPreviewBound(filename);
 
       return {
         id: filename,
@@ -55,8 +103,10 @@ async function getPreviews(): Promise<MotionPreview[]> {
         description: metadata?.description ?? filename,
         subject: metadata?.subject_description ?? "Fixture preview",
         glbUrl: `/fixtures/previews/${filename}`,
+        previewBound,
       };
-    });
+    }),
+  );
 }
 
 export default async function PreviewTestPage() {

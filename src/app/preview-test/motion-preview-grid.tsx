@@ -6,11 +6,32 @@ SPDX-License-Identifier: Apache-2.0
 "use client";
 
 import { Canvas } from "@react-three/fiber";
-import { Bounds, Center, OrbitControls, useAnimations, useGLTF } from "@react-three/drei";
+import { OrbitControls, useAnimations, useGLTF } from "@react-three/drei";
 import { Suspense, useEffect, useMemo, useRef } from "react";
-import { Color, MeshToonMaterial } from "three";
-import type { AnimationClip, Group, Material, Mesh, Texture } from "three";
+import {
+  BackSide,
+  Color,
+  MathUtils,
+  MeshToonMaterial,
+  ShaderMaterial,
+  Vector3,
+} from "three";
+import type {
+  AnimationClip,
+  Group,
+  Material,
+  Mesh,
+  Object3D,
+  Texture,
+} from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
+
+export type PreviewBound = {
+  center: [number, number, number];
+  size: [number, number, number];
+  radius: number;
+  height: number;
+};
 
 export type MotionPreview = {
   id: string;
@@ -19,6 +40,7 @@ export type MotionPreview = {
   description: string;
   subject: string;
   glbUrl: string;
+  previewBound?: PreviewBound;
 };
 
 type MotionPreviewGridProps = {
@@ -37,6 +59,49 @@ const toonColors = {
   joints: new Color("#256f7a"),
   fallback: new Color("#d9a441"),
 };
+const previewTargetHeight = 0.9;
+const outlineOffset = 0.015;
+
+function createOutlineMaterial() {
+  return new ShaderMaterial({
+    uniforms: {
+      color: { value: new Color("#1f2937") },
+      offset: { value: outlineOffset },
+    },
+    vertexShader: `
+      #include <common>
+      #include <morphtarget_pars_vertex>
+      #include <skinning_pars_vertex>
+
+      uniform float offset;
+
+      void main() {
+        #include <beginnormal_vertex>
+        #include <morphnormal_vertex>
+        #include <skinbase_vertex>
+        #include <skinnormal_vertex>
+        #include <defaultnormal_vertex>
+        #include <begin_vertex>
+        #include <morphtarget_vertex>
+        #include <skinning_vertex>
+
+        transformed += normalize(objectNormal) * offset;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 color;
+
+      void main() {
+        gl_FragColor = vec4(color, 1.0);
+        #include <colorspace_fragment>
+      }
+    `,
+    side: BackSide,
+    depthWrite: false,
+    toneMapped: false,
+  });
+}
 
 function createToonMaterial(material: Material) {
   const source = material as Material & {
@@ -79,14 +144,80 @@ function applyToonMaterials(model: Group) {
   return model;
 }
 
+function addOutlineShells(model: Group) {
+  const outlineMeshes: Array<{ parent: Object3D; outline: Mesh }> = [];
+  const outlineMaterial = createOutlineMaterial();
+
+  model.traverse((object) => {
+    const mesh = object as Mesh;
+
+    if (!mesh.isMesh || !mesh.geometry || !mesh.parent) {
+      return;
+    }
+
+    const outline = mesh.clone(false);
+
+    outline.name = mesh.name ? `${mesh.name} Outline` : "Humanoid Outline";
+    outline.material = outlineMaterial;
+    outline.renderOrder = -1;
+    outline.frustumCulled = false;
+    outlineMeshes.push({ parent: mesh.parent, outline });
+  });
+
+  outlineMeshes.forEach(({ parent, outline }) => {
+    parent.add(outline);
+  });
+
+  return model;
+}
+
+function getPreviewTarget(previewBound?: PreviewBound) {
+  return previewBound
+    ? new Vector3(previewBound.center[0], previewTargetHeight, previewBound.center[2])
+    : new Vector3(0, previewTargetHeight, 0);
+}
+
+function getPreviewCamera(previewBound?: PreviewBound) {
+  const fov = 34;
+
+  if (!previewBound) {
+    return {
+      position: [0, 1.2, 3.4] as [number, number, number],
+      fov,
+    };
+  }
+
+  const target = getPreviewTarget(previewBound);
+  const radius = Math.max(previewBound.radius, 0.1);
+  const distance = (radius / Math.sin(MathUtils.degToRad(fov) / 2)) * 1.2;
+
+  return {
+    position: [
+      target.x,
+      target.y + radius * 0.12,
+      target.z + distance,
+    ] as [number, number, number],
+    fov,
+    near: Math.max(0.01, distance - radius * 4),
+    far: distance + radius * 4,
+  };
+}
+
+function PreviewControls({ previewBound }: { previewBound?: PreviewBound }) {
+  const target = useMemo(() => getPreviewTarget(previewBound), [previewBound]);
+
+  return <OrbitControls enablePan={false} enableZoom={false} target={target} />;
+}
+
 function AnimatedGlb({ src }: { src: string }) {
   const group = useRef<Group>(null);
   const humanoid = useGLTF(humanoidUrl) as LoadedGlb;
   const { animations } = useGLTF(src) as LoadedGlb;
-  const model = useMemo(
-    () => applyToonMaterials(cloneSkeleton(humanoid.scene)),
-    [humanoid.scene],
-  );
+  const model = useMemo(() => {
+    const clonedHumanoid = cloneSkeleton(humanoid.scene) as Group;
+
+    return addOutlineShells(applyToonMaterials(clonedHumanoid));
+  }, [humanoid.scene]);
   const { actions } = useAnimations(animations, group);
 
   useEffect(() => {
@@ -105,31 +236,33 @@ function AnimatedGlb({ src }: { src: string }) {
 
   return (
     <group ref={group}>
-      <Center>
-        <primitive object={model} />
-      </Center>
+      <primitive object={model} />
     </group>
   );
 }
 
 function PreviewCard({ preview }: { preview: MotionPreview }) {
+  const camera = getPreviewCamera(preview.previewBound);
+  const target = getPreviewTarget(preview.previewBound);
+
   return (
     <article className="grid min-h-[320px] grid-rows-[minmax(210px,1fr)_auto] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
       <div className="relative bg-zinc-100">
         <Canvas
-          camera={{ position: [0, 1.2, 3.4], fov: 34 }}
+          camera={camera}
           dpr={[1, 1.5]}
           gl={{ antialias: true }}
+          onCreated={({ camera }) => {
+            camera.lookAt(target);
+          }}
         >
           <color attach="background" args={["#f4f4f5"]} />
           <ambientLight intensity={1.8} />
           <directionalLight position={[2, 4, 3]} intensity={2.2} />
           <Suspense fallback={null}>
-            <Bounds fit clip observe margin={1.25}>
-              <AnimatedGlb src={preview.glbUrl} />
-            </Bounds>
+            <AnimatedGlb src={preview.glbUrl} />
           </Suspense>
-          <OrbitControls enablePan={false} enableZoom={false} />
+          <PreviewControls previewBound={preview.previewBound} />
         </Canvas>
       </div>
 
