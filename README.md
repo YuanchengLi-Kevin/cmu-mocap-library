@@ -69,7 +69,7 @@ Preview rendering combines these two asset types:
 The clone step is required because skinned meshes and skeleton state should not
 be shared across multiple simultaneously animated previews.
 
-The current `/preview-test` route intentionally uses separate canvas instances
-to stress-test 12 simultaneous previews. The next rendering architecture should
-move toward a shared React Three Fiber canvas with Drei `View` regions so the
-library can render many previews with less WebGL overhead.
+The current `/preview-test` route uses one shared React Three Fiber canvas with
+Drei `View` regions. Each card owns a tracked view region, while the shared
+canvas renders those regions through one WebGL context to reduce renderer and
+GPU overhead.

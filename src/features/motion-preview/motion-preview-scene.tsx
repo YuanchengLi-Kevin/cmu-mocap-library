@@ -5,9 +5,14 @@ SPDX-License-Identifier: Apache-2.0
 
 "use client";
 
-import { Canvas } from "@react-three/fiber";
-import { OrbitControls, useAnimations, useGLTF } from "@react-three/drei";
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import {
+  OrbitControls,
+  PerspectiveCamera,
+  useAnimations,
+  useGLTF,
+} from "@react-three/drei";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import {
   BackSide,
   Color,
@@ -25,31 +30,23 @@ import type {
   Texture,
 } from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
+import type { MotionPreview, PreviewBound } from "./types";
 
-export type PreviewBound = {
-  center: [number, number, number];
-  size: [number, number, number];
-  radius: number;
-  height: number;
-};
-
-export type MotionPreview = {
-  id: string;
-  title: string;
-  variant: string;
-  description: string;
-  subject: string;
-  glbUrl: string;
-  previewBound?: PreviewBound;
-};
-
-type MotionPreviewGridProps = {
-  previews: MotionPreview[];
+type MotionPreviewSceneProps = {
+  controlsElementRef: RefObject<HTMLElement | null>;
+  preview: MotionPreview;
 };
 
 type LoadedGlb = {
   scene: Group;
   animations: AnimationClip[];
+};
+
+type PreviewCameraConfig = {
+  position: [number, number, number];
+  fov: number;
+  near?: number;
+  far?: number;
 };
 
 const humanoidUrl = "/fixtures/humanoid/cmu_humanoid.glb";
@@ -59,8 +56,16 @@ const toonColors = {
   joints: new Color("#256f7a"),
   fallback: new Color("#d9a441"),
 };
-const previewTargetHeight = 0.9;
+const previewTargetHeight = 1.2;
 const outlineOffset = 0.015;
+
+export function preloadMotionPreviewAssets(previews: MotionPreview[]) {
+  useGLTF.preload(humanoidUrl);
+
+  previews.forEach((preview) => {
+    useGLTF.preload(preview.glbUrl);
+  });
+}
 
 function createOutlineMaterial() {
   return new ShaderMaterial({
@@ -177,12 +182,12 @@ function getPreviewTarget(previewBound?: PreviewBound) {
     : new Vector3(0, previewTargetHeight, 0);
 }
 
-function getPreviewCamera(previewBound?: PreviewBound) {
+function getPreviewCamera(previewBound?: PreviewBound): PreviewCameraConfig {
   const fov = 34;
 
   if (!previewBound) {
     return {
-      position: [0, 1.2, 3.4] as [number, number, number],
+      position: [0, 1.2, 3.4],
       fov,
     };
   }
@@ -192,21 +197,60 @@ function getPreviewCamera(previewBound?: PreviewBound) {
   const distance = (radius / Math.sin(MathUtils.degToRad(fov) / 2)) * 1.2;
 
   return {
-    position: [
-      target.x,
-      target.y + radius * 0.12,
-      target.z + distance,
-    ] as [number, number, number],
+    position: [target.x, target.y + radius * 0.12, target.z + distance],
     fov,
     near: Math.max(0.01, distance - radius * 4),
     far: distance + radius * 4,
   };
 }
 
-function PreviewControls({ previewBound }: { previewBound?: PreviewBound }) {
+function PreviewCamera({ previewBound }: { previewBound?: PreviewBound }) {
+  const camera = useMemo(() => getPreviewCamera(previewBound), [previewBound]);
   const target = useMemo(() => getPreviewTarget(previewBound), [previewBound]);
 
-  return <OrbitControls enablePan={false} enableZoom={false} target={target} />;
+  return (
+    <PerspectiveCamera
+      makeDefault
+      position={camera.position}
+      fov={camera.fov}
+      near={camera.near}
+      far={camera.far}
+      onUpdate={(activeCamera) => {
+        activeCamera.lookAt(target);
+        activeCamera.updateProjectionMatrix();
+      }}
+    />
+  );
+}
+
+function PreviewControls({
+  controlsElementRef,
+  previewBound,
+}: {
+  controlsElementRef: RefObject<HTMLElement | null>;
+  previewBound?: PreviewBound;
+}) {
+  const [controlsElement, setControlsElement] = useState<HTMLElement>();
+  const target = useMemo(() => getPreviewTarget(previewBound), [previewBound]);
+
+  useEffect(() => {
+    if (controlsElementRef.current) {
+      setControlsElement(controlsElementRef.current);
+    }
+  }, [controlsElementRef]);
+
+  if (!controlsElement) {
+    return null;
+  }
+
+  return (
+    <OrbitControls
+      domElement={controlsElement}
+      enablePan={false}
+      enableZoom={false}
+      target={target}
+    />
+  );
 }
 
 function AnimatedGlb({ src }: { src: string }) {
@@ -241,59 +285,23 @@ function AnimatedGlb({ src }: { src: string }) {
   );
 }
 
-function PreviewCard({ preview }: { preview: MotionPreview }) {
-  const camera = getPreviewCamera(preview.previewBound);
-  const target = getPreviewTarget(preview.previewBound);
-
+export function MotionPreviewScene({
+  controlsElementRef,
+  preview,
+}: MotionPreviewSceneProps) {
   return (
-    <article className="grid min-h-[320px] grid-rows-[minmax(210px,1fr)_auto] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
-      <div className="relative bg-zinc-100">
-        <Canvas
-          camera={camera}
-          dpr={[1, 1.5]}
-          gl={{ antialias: true }}
-          onCreated={({ camera }) => {
-            camera.lookAt(target);
-          }}
-        >
-          <color attach="background" args={["#f4f4f5"]} />
-          <ambientLight intensity={1.8} />
-          <directionalLight position={[2, 4, 3]} intensity={2.2} />
-          <Suspense fallback={null}>
-            <AnimatedGlb src={preview.glbUrl} />
-          </Suspense>
-          <PreviewControls previewBound={preview.previewBound} />
-        </Canvas>
-      </div>
-
-      <div className="flex flex-col gap-2 border-t border-zinc-200 p-3">
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="text-sm font-semibold text-zinc-950">{preview.title}</h2>
-          <span className="shrink-0 rounded border border-zinc-300 px-2 py-0.5 text-xs text-zinc-600">
-            {preview.variant}
-          </span>
-        </div>
-        <p className="line-clamp-2 text-sm text-zinc-700">{preview.description}</p>
-        <p className="line-clamp-1 text-xs text-zinc-500">{preview.subject}</p>
-      </div>
-    </article>
-  );
-}
-
-export function MotionPreviewGrid({ previews }: MotionPreviewGridProps) {
-  useEffect(() => {
-    useGLTF.preload(humanoidUrl);
-
-    previews.forEach((preview) => {
-      useGLTF.preload(preview.glbUrl);
-    });
-  }, [previews]);
-
-  return (
-    <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-      {previews.map((preview) => (
-        <PreviewCard key={preview.id} preview={preview} />
-      ))}
-    </section>
+    <>
+      <color attach="background" args={["#f4f4f5"]} />
+      <PreviewCamera previewBound={preview.previewBound} />
+      <ambientLight intensity={1.8} />
+      <directionalLight position={[2, 4, 3]} intensity={2.2} />
+      <Suspense fallback={null}>
+        <AnimatedGlb src={preview.glbUrl} />
+      </Suspense>
+      <PreviewControls
+        controlsElementRef={controlsElementRef}
+        previewBound={preview.previewBound}
+      />
+    </>
   );
 }
