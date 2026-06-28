@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 import { View } from "@react-three/drei";
 import { useRef } from "react";
 import { MotionPreviewScene } from "./motion-preview-scene";
-import type { MotionPreview } from "./types";
+import type { MotionPreview } from "../types/motion-preview";
 
 type MotionPreviewCardProps = {
   preview: MotionPreview;

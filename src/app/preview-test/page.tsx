@@ -3,8 +3,10 @@ Copyright (c) 2026 Yuancheng Li
 SPDX-License-Identifier: Apache-2.0
 */
 
-import { getFixturePreviews } from "../../features/motion-preview/fixture-previews";
-import { MotionPreviewGrid } from "../../features/motion-preview/motion-preview-grid";
+import {
+  getFixturePreviews,
+  MotionPreviewGrid,
+} from "../../features/motion-preview";
 
 export default async function PreviewTestPage() {
   const previews = await getFixturePreviews();

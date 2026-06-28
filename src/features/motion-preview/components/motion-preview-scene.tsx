@@ -30,7 +30,7 @@ import type {
   Texture,
 } from "three";
 import { clone as cloneSkeleton } from "three/examples/jsm/utils/SkeletonUtils.js";
-import type { MotionPreview, PreviewBound } from "./types";
+import type { MotionPreview, PreviewBound } from "../types/motion-preview";
 
 type MotionPreviewSceneProps = {
   controlsElementRef: RefObject<HTMLElement | null>;

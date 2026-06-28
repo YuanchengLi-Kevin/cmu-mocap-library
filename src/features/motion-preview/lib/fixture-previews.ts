@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import type { MotionPreview, PreviewBound } from "./types";
+import type { MotionPreview, PreviewBound } from "../types/motion-preview";
 
 type MotionIndexEntry = {
   source_id: string;
