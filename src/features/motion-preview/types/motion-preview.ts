@@ -19,3 +19,9 @@ export type MotionPreview = {
   glbUrl: string;
   previewBound?: PreviewBound;
 };
+
+export type MotionPreviewPage = {
+  items: MotionPreview[];
+  nextOffset: number | null;
+  totalCount: number;
+};

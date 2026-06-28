@@ -5,7 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import type { MotionPreview, PreviewBound } from "../types/motion-preview";
+import type {
+  MotionPreview,
+  MotionPreviewPage,
+  PreviewBound,
+} from "../types/motion-preview";
 
 type MotionIndexEntry = {
   source_id: string;
@@ -25,7 +29,7 @@ type PreviewMetadata = {
 };
 
 const fixtureRoot = path.join(process.cwd(), "public", "fixtures");
-const previewCount = 12;
+export const fixturePreviewPageSize = 12;
 
 function toSourceId(filename: string) {
   const motionId = filename
@@ -74,7 +78,13 @@ async function readPreviewBound(filename: string) {
   }
 }
 
-export async function getFixturePreviews(): Promise<MotionPreview[]> {
+export async function getFixturePreviewPage({
+  offset = 0,
+  limit = fixturePreviewPageSize,
+}: {
+  offset?: number;
+  limit?: number;
+} = {}): Promise<MotionPreviewPage> {
   const [previewFiles, indexRaw] = await Promise.all([
     readdir(path.join(fixtureRoot, "previews")),
     readFile(path.join(fixtureRoot, "manifests", "motion_index.json"), "utf8"),
@@ -87,11 +97,11 @@ export async function getFixturePreviews(): Promise<MotionPreview[]> {
 
   const inPlacePreviewFiles = previewFiles
     .filter((filename) => filename.endsWith("_in_place.glb"))
-    .sort((a, b) => a.localeCompare(b))
-    .slice(0, previewCount);
+    .sort((a, b) => a.localeCompare(b));
+  const pageFiles = inPlacePreviewFiles.slice(offset, offset + limit);
 
-  return Promise.all(
-    inPlacePreviewFiles.map(async (filename) => {
+  const items = await Promise.all(
+    pageFiles.map(async (filename) => {
       const sourceId = toSourceId(filename);
       const metadata = metadataBySourceId.get(sourceId);
       const previewBound = await readPreviewBound(filename);
@@ -107,4 +117,18 @@ export async function getFixturePreviews(): Promise<MotionPreview[]> {
       };
     }),
   );
+
+  const nextOffset = offset + items.length;
+
+  return {
+    items,
+    nextOffset: nextOffset < inPlacePreviewFiles.length ? nextOffset : null,
+    totalCount: inPlacePreviewFiles.length,
+  };
+}
+
+export async function getFixturePreviews(): Promise<MotionPreview[]> {
+  const page = await getFixturePreviewPage();
+
+  return page.items;
 }

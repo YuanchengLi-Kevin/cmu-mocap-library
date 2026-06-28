@@ -7,40 +7,136 @@ SPDX-License-Identifier: Apache-2.0
 
 import { Canvas } from "@react-three/fiber";
 import { View } from "@react-three/drei";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { VirtuosoGrid } from "react-virtuoso";
-import type { ListRange } from "react-virtuoso";
+import type { GridComponents, ListRange } from "react-virtuoso";
 import { MotionPreviewCard } from "./motion-preview-card";
 import { preloadMotionPreviewAssets } from "./motion-preview-scene";
-import type { MotionPreview } from "../types/motion-preview";
+import type { MotionPreview, MotionPreviewPage } from "../types/motion-preview";
 
 type MotionPreviewGridProps = {
   previews: MotionPreview[];
+  nextOffset: number | null;
+  pageSize: number;
+  totalCount: number;
+};
+
+type MotionPreviewGridContext = {
+  isLoadingMore: boolean;
+  loadedCount: number;
+  nextOffset: number | null;
+  totalCount: number;
 };
 
 const initialPreviewWindowSize = 8;
 const preloadBufferSize = 6;
+const fastScrollVelocity = 1400;
+const fastScrollSettleDelay = 120;
+const loadMoreDistance = 320;
 
-export function MotionPreviewGrid({ previews }: MotionPreviewGridProps) {
+function MotionPreviewGridFooter({
+  context,
+}: {
+  context: MotionPreviewGridContext;
+}) {
+  if (!context.isLoadingMore && context.nextOffset !== null) {
+    return null;
+  }
+
+  return (
+    <div className="py-8 text-center text-sm text-zinc-500">
+      {context.isLoadingMore
+        ? "Loading more previews..."
+        : `${context.loadedCount} of ${context.totalCount} previews loaded`}
+    </div>
+  );
+}
+
+const gridComponents = {
+  Footer: MotionPreviewGridFooter,
+} satisfies GridComponents<MotionPreviewGridContext>;
+
+export function MotionPreviewGrid({
+  previews,
+  nextOffset: initialNextOffset,
+  pageSize,
+  totalCount,
+}: MotionPreviewGridProps) {
   const [canvasReady, setCanvasReady] = useState(false);
+  const [loadedPreviews, setLoadedPreviews] = useState(previews);
+  const [nextOffset, setNextOffset] = useState(initialNextOffset);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hideCanvasForFastScroll, setHideCanvasForFastScroll] = useState(false);
   const [visibleRange, setVisibleRange] = useState<ListRange | null>(null);
+  const isLoadingMoreRef = useRef(false);
+  const hideCanvasForFastScrollRef = useRef(false);
+  const gridContext = useMemo(
+    () => ({
+      isLoadingMore,
+      loadedCount: loadedPreviews.length,
+      nextOffset,
+      totalCount,
+    }),
+    [isLoadingMore, loadedPreviews.length, nextOffset, totalCount],
+  );
   const previewsToPreload = useMemo(() => {
     if (!visibleRange) {
-      return previews.slice(0, initialPreviewWindowSize);
+      return loadedPreviews.slice(0, initialPreviewWindowSize);
     }
 
     const startIndex = Math.max(visibleRange.startIndex - preloadBufferSize, 0);
     const endIndex = Math.min(
       visibleRange.endIndex + preloadBufferSize + 1,
-      previews.length,
+      loadedPreviews.length,
     );
 
-    return previews.slice(startIndex, endIndex);
-  }, [previews, visibleRange]);
+    return loadedPreviews.slice(startIndex, endIndex);
+  }, [loadedPreviews, visibleRange]);
 
   useEffect(() => {
     preloadMotionPreviewAssets(previewsToPreload);
   }, [previewsToPreload]);
+
+  const loadMorePreviews = useCallback(async () => {
+    if (isLoadingMoreRef.current || nextOffset === null) {
+      return;
+    }
+
+    isLoadingMoreRef.current = true;
+    setIsLoadingMore(true);
+
+    try {
+      const response = await fetch(
+        `/api/motion-previews?offset=${nextOffset}&limit=${pageSize}`,
+      );
+
+      if (!response.ok) {
+        return;
+      }
+
+      const page = (await response.json()) as MotionPreviewPage;
+
+      setLoadedPreviews((currentPreviews) => {
+        const loadedIds = new Set(currentPreviews.map((preview) => preview.id));
+        const newPreviews = page.items.filter(
+          (preview) => !loadedIds.has(preview.id),
+        );
+
+        return [...currentPreviews, ...newPreviews];
+      });
+      setNextOffset(page.nextOffset);
+    } finally {
+      isLoadingMoreRef.current = false;
+      setIsLoadingMore(false);
+    }
+  }, [nextOffset, pageSize]);
+
+  const handleRangeChanged = useCallback(
+    (range: ListRange) => {
+      setVisibleRange(range);
+    },
+    [],
+  );
 
   useEffect(() => {
     let secondFrame = 0;
@@ -59,6 +155,48 @@ export function MotionPreviewGrid({ previews }: MotionPreviewGridProps) {
     };
   }, []);
 
+  useEffect(() => {
+    let settleTimeout = 0;
+    let lastScrollY = window.scrollY;
+    let lastTimestamp = performance.now();
+
+    function handleScroll() {
+      const scrollY = window.scrollY;
+      const timestamp = performance.now();
+      const elapsed = Math.max(timestamp - lastTimestamp, 1);
+      const velocity = (Math.abs(scrollY - lastScrollY) / elapsed) * 1000;
+      const distanceFromBottom =
+        document.documentElement.scrollHeight - (window.innerHeight + scrollY);
+
+      lastScrollY = scrollY;
+      lastTimestamp = timestamp;
+
+      if (velocity > fastScrollVelocity) {
+        if (!hideCanvasForFastScrollRef.current) {
+          hideCanvasForFastScrollRef.current = true;
+          setHideCanvasForFastScroll(true);
+        }
+
+        window.clearTimeout(settleTimeout);
+        settleTimeout = window.setTimeout(() => {
+          hideCanvasForFastScrollRef.current = false;
+          setHideCanvasForFastScroll(false);
+        }, fastScrollSettleDelay);
+      }
+
+      if (distanceFromBottom <= loadMoreDistance) {
+        void loadMorePreviews();
+      }
+    }
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      window.clearTimeout(settleTimeout);
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, [loadMorePreviews]);
+
   return (
     <section className="relative">
       {canvasReady ? (
@@ -71,6 +209,8 @@ export function MotionPreviewGrid({ previews }: MotionPreviewGridProps) {
             inset: 0,
             zIndex: 0,
             pointerEvents: "none",
+            opacity: hideCanvasForFastScroll ? 0 : 1,
+            transition: "opacity 120ms ease",
           }}
         >
           <View.Port />
@@ -79,14 +219,19 @@ export function MotionPreviewGrid({ previews }: MotionPreviewGridProps) {
 
       <VirtuosoGrid
         className="relative z-10"
+        components={gridComponents}
         computeItemKey={(_, preview) => preview.id}
-        data={previews}
+        context={gridContext}
+        data={loadedPreviews}
         increaseViewportBy={{ top: 640, bottom: 640 }}
-        initialItemCount={Math.min(previews.length, initialPreviewWindowSize)}
+        initialItemCount={Math.min(
+          loadedPreviews.length,
+          initialPreviewWindowSize,
+        )}
         itemClassName="min-w-0"
         itemContent={(_, preview) => <MotionPreviewCard preview={preview} />}
         listClassName="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-        rangeChanged={setVisibleRange}
+        rangeChanged={handleRangeChanged}
         useWindowScroll
       />
     </section>

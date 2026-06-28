@@ -4,12 +4,13 @@ SPDX-License-Identifier: Apache-2.0
 */
 
 import {
-  getFixturePreviews,
+  fixturePreviewPageSize,
+  getFixturePreviewPage,
   MotionPreviewGrid,
 } from "../../features/motion-preview";
 
 export default async function PreviewTestPage() {
-  const previews = await getFixturePreviews();
+  const previewPage = await getFixturePreviewPage();
 
   return (
     <main className="min-h-screen bg-stone-50 px-6 py-6 text-zinc-950 sm:px-8">
@@ -20,15 +21,21 @@ export default async function PreviewTestPage() {
           </p>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <h1 className="text-3xl font-semibold tracking-normal text-zinc-950">
-              12 simultaneous GLB previews
+              Infinite GLB preview grid
             </h1>
             <p className="text-sm text-zinc-600">
-              Loaded from <code>public/fixtures</code>
+              {previewPage.totalCount} local fixtures,{" "}
+              {fixturePreviewPageSize} per page
             </p>
           </div>
         </header>
 
-        <MotionPreviewGrid previews={previews} />
+        <MotionPreviewGrid
+          nextOffset={previewPage.nextOffset}
+          pageSize={fixturePreviewPageSize}
+          previews={previewPage.items}
+          totalCount={previewPage.totalCount}
+        />
       </div>
     </main>
   );
