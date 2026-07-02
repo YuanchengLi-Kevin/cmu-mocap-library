@@ -31,8 +31,8 @@ type MotionPreviewGridContext = {
 const initialPreviewWindowSize = 8;
 const preloadBufferSize = 6;
 const fastScrollVelocity = 1400;
+const loadMoreCooldownMs = 650;
 const fastScrollSettleDelay = 120;
-const loadMoreDistance = 320;
 
 function MotionPreviewGridFooter({
   context,
@@ -70,6 +70,11 @@ export function MotionPreviewGrid({
   const [visibleRange, setVisibleRange] = useState<ListRange | null>(null);
   const isLoadingMoreRef = useRef(false);
   const hideCanvasForFastScrollRef = useRef(false);
+  const isScrollSettlingRef = useRef(false);
+  const loadMorePreviewsRef = useRef<() => void>(() => {});
+  const loadMoreCooldownTimeoutRef = useRef(0);
+  const lastLoadMoreTimestampRef = useRef(0);
+  const pendingLoadAfterScrollSettleRef = useRef(false);
   const gridContext = useMemo(
     () => ({
       isLoadingMore,
@@ -131,11 +136,53 @@ export function MotionPreviewGrid({
     }
   }, [nextOffset, pageSize]);
 
+  const requestLoadMorePreviews = useCallback(() => {
+    if (isScrollSettlingRef.current) {
+      pendingLoadAfterScrollSettleRef.current = true;
+      return;
+    }
+
+    const timestamp = performance.now();
+    const timeSinceLastLoad = timestamp - lastLoadMoreTimestampRef.current;
+
+    if (timeSinceLastLoad < loadMoreCooldownMs) {
+      pendingLoadAfterScrollSettleRef.current = true;
+      window.clearTimeout(loadMoreCooldownTimeoutRef.current);
+      loadMoreCooldownTimeoutRef.current = window.setTimeout(() => {
+        loadMoreCooldownTimeoutRef.current = 0;
+
+        if (pendingLoadAfterScrollSettleRef.current) {
+          pendingLoadAfterScrollSettleRef.current = false;
+          loadMorePreviewsRef.current();
+        }
+      }, loadMoreCooldownMs - timeSinceLastLoad);
+      return;
+    }
+
+    lastLoadMoreTimestampRef.current = timestamp;
+    pendingLoadAfterScrollSettleRef.current = false;
+    void loadMorePreviews();
+  }, [loadMorePreviews]);
+
+  useEffect(() => {
+    loadMorePreviewsRef.current = requestLoadMorePreviews;
+  }, [requestLoadMorePreviews]);
+
   const handleRangeChanged = useCallback(
     (range: ListRange) => {
       setVisibleRange(range);
     },
     [],
+  );
+  const handleEndReached = useCallback(
+    (index: number) => {
+      if (index < loadedPreviews.length - 1) {
+        return;
+      }
+
+      requestLoadMorePreviews();
+    },
+    [requestLoadMorePreviews, loadedPreviews.length],
   );
 
   useEffect(() => {
@@ -165,37 +212,41 @@ export function MotionPreviewGrid({
       const timestamp = performance.now();
       const elapsed = Math.max(timestamp - lastTimestamp, 1);
       const velocity = (Math.abs(scrollY - lastScrollY) / elapsed) * 1000;
-      const distanceFromBottom =
-        document.documentElement.scrollHeight - (window.innerHeight + scrollY);
-
       lastScrollY = scrollY;
       lastTimestamp = timestamp;
+      isScrollSettlingRef.current = true;
 
       if (velocity > fastScrollVelocity) {
         if (!hideCanvasForFastScrollRef.current) {
           hideCanvasForFastScrollRef.current = true;
           setHideCanvasForFastScroll(true);
         }
+      }
 
-        window.clearTimeout(settleTimeout);
-        settleTimeout = window.setTimeout(() => {
+      window.clearTimeout(settleTimeout);
+      settleTimeout = window.setTimeout(() => {
+        isScrollSettlingRef.current = false;
+
+        if (hideCanvasForFastScrollRef.current) {
           hideCanvasForFastScrollRef.current = false;
           setHideCanvasForFastScroll(false);
-        }, fastScrollSettleDelay);
-      }
+        }
 
-      if (distanceFromBottom <= loadMoreDistance) {
-        void loadMorePreviews();
-      }
+        if (pendingLoadAfterScrollSettleRef.current) {
+          pendingLoadAfterScrollSettleRef.current = false;
+          loadMorePreviewsRef.current();
+        }
+      }, fastScrollSettleDelay);
     }
 
     window.addEventListener("scroll", handleScroll, { passive: true });
 
     return () => {
       window.clearTimeout(settleTimeout);
+      window.clearTimeout(loadMoreCooldownTimeoutRef.current);
       window.removeEventListener("scroll", handleScroll);
     };
-  }, [loadMorePreviews]);
+  }, []);
 
   return (
     <section className="relative">
@@ -223,6 +274,7 @@ export function MotionPreviewGrid({
         computeItemKey={(_, preview) => preview.id}
         context={gridContext}
         data={loadedPreviews}
+        endReached={handleEndReached}
         increaseViewportBy={{ top: 640, bottom: 640 }}
         initialItemCount={Math.min(
           loadedPreviews.length,

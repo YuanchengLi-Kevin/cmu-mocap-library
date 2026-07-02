@@ -49,6 +49,11 @@ type PreviewCameraConfig = {
   far?: number;
 };
 
+type PendingModelDisposal = {
+  model: Group;
+  timeoutId: number;
+};
+
 const humanoidUrl = "/fixtures/humanoid/cmu_humanoid.glb";
 
 const toonColors = {
@@ -176,6 +181,32 @@ function addOutlineShells(model: Group) {
   return model;
 }
 
+function collectMaterials(material: Material | Material[], materials: Set<Material>) {
+  if (Array.isArray(material)) {
+    material.forEach((entry) => materials.add(entry));
+    return;
+  }
+
+  materials.add(material);
+}
+
+function disposePreviewModel(model: Group) {
+  const materials = new Set<Material>();
+
+  model.traverse((object) => {
+    const mesh = object as Mesh;
+
+    if (mesh.isMesh && mesh.material) {
+      collectMaterials(mesh.material, materials);
+    }
+  });
+
+  materials.forEach((material) => {
+    material.dispose();
+  });
+  model.clear();
+}
+
 function getPreviewTarget(previewBound?: PreviewBound) {
   return previewBound
     ? new Vector3(previewBound.center[0], previewTargetHeight, previewBound.center[2])
@@ -255,6 +286,7 @@ function PreviewControls({
 
 function AnimatedGlb({ src }: { src: string }) {
   const group = useRef<Group>(null);
+  const pendingModelDisposal = useRef<PendingModelDisposal | null>(null);
   const humanoid = useGLTF(humanoidUrl) as LoadedGlb;
   const { animations } = useGLTF(src) as LoadedGlb;
   const model = useMemo(() => {
@@ -263,6 +295,27 @@ function AnimatedGlb({ src }: { src: string }) {
     return addOutlineShells(applyToonMaterials(clonedHumanoid));
   }, [humanoid.scene]);
   const { actions } = useAnimations(animations, group);
+
+  useEffect(() => {
+    const pendingDisposal = pendingModelDisposal.current;
+
+    if (pendingDisposal?.model === model) {
+      window.clearTimeout(pendingDisposal.timeoutId);
+      pendingModelDisposal.current = null;
+    }
+
+    return () => {
+      const timeoutId = window.setTimeout(() => {
+        disposePreviewModel(model);
+
+        if (pendingModelDisposal.current?.model === model) {
+          pendingModelDisposal.current = null;
+        }
+      }, 0);
+
+      pendingModelDisposal.current = { model, timeoutId };
+    };
+  }, [model]);
 
   useEffect(() => {
     const action = Object.values(actions)[0];
