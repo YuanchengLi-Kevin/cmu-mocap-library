@@ -11,7 +11,6 @@ import type { RefObject } from "react";
 import { MathUtils, Vector3 } from "three";
 import type { PerspectiveCamera as ThreePerspectiveCamera } from "three";
 import type {
-  PreviewBound,
   PreviewFrame,
   PreviewFrameTarget,
 } from "../types/motion-preview";
@@ -26,9 +25,9 @@ type PreviewCameraConfig = {
 const previewCameraFov = 34;
 const previewFrameTargetX = 0;
 const previewFrameTargetZ = 1.25;
-const previewTargetHeight = 1.2;
-const previewFramePadding = 1.12;
-const previewRadiusPadding = 1.05;
+const previewFramePadding = 3;
+const previewFrameTargetYOffset = 0.7;
+const defaultPreviewCameraTarget = new Vector3(0, 1.2, 0);
 
 function getPreviewFrameTarget(
   previewFrame: PreviewFrame,
@@ -46,23 +45,12 @@ function getPreviewFrameTarget(
   return {
     target: new Vector3(
       runtimeTarget?.x ?? previewFrameTargetX,
-      (previewFrame.floorY + previewFrame.ceilingY) / 2,
+      (previewFrame.floorY + previewFrame.ceilingY) / 2 +
+        previewFrameTargetYOffset,
       runtimeTarget?.z ?? previewFrameTargetZ,
     ),
     distance,
   };
-}
-
-function getPreviewTarget(previewBound?: PreviewBound) {
-  if (!previewBound) {
-    return new Vector3(0, previewTargetHeight, 0);
-  }
-
-  return new Vector3(
-    previewBound.center[0],
-    previewTargetHeight,
-    previewBound.center[2],
-  );
 }
 
 function getPreviewFrameCamera(
@@ -87,40 +75,12 @@ function getPreviewFrameCamera(
   };
 }
 
-function getPreviewBoundCamera(
-  previewBound: PreviewBound,
-): PreviewCameraConfig {
-  const target = getPreviewTarget(previewBound);
-  const radius = Math.max(previewBound.radius, 0.1);
-  const verticalOffset = Math.abs(previewBound.center[1] - target.y);
-  const effectiveRadius = Math.sqrt(radius ** 2 + verticalOffset ** 2);
-  const distance =
-    (effectiveRadius / Math.sin(MathUtils.degToRad(previewCameraFov) / 2)) *
-    previewRadiusPadding;
-
-  return {
-    position: [
-      target.x,
-      target.y + effectiveRadius * 0.12,
-      target.z + distance,
-    ],
-    fov: previewCameraFov,
-    near: Math.max(0.01, distance - effectiveRadius * 4),
-    far: distance + effectiveRadius * 4,
-  };
-}
-
 function getPreviewCamera(
   previewFrame?: PreviewFrame,
-  previewBound?: PreviewBound,
   runtimeTarget?: PreviewFrameTarget | null,
 ): PreviewCameraConfig {
   if (previewFrame) {
     return getPreviewFrameCamera(previewFrame, runtimeTarget);
-  }
-
-  if (previewBound) {
-    return getPreviewBoundCamera(previewBound);
   }
 
   return {
@@ -131,32 +91,29 @@ function getPreviewCamera(
 
 function getTarget(
   previewFrame?: PreviewFrame,
-  previewBound?: PreviewBound,
   runtimeTarget?: PreviewFrameTarget | null,
 ) {
   return previewFrame
     ? getPreviewFrameTarget(previewFrame, previewCameraFov, runtimeTarget)
         .target
-    : getPreviewTarget(previewBound);
+    : defaultPreviewCameraTarget;
 }
 
 export function PreviewCamera({
   previewFrame,
-  previewBound,
   runtimeTarget,
 }: {
   previewFrame?: PreviewFrame;
-  previewBound?: PreviewBound;
   runtimeTarget?: PreviewFrameTarget | null;
 }) {
   const cameraRef = useRef<ThreePerspectiveCamera>(null);
   const camera = useMemo(
-    () => getPreviewCamera(previewFrame, previewBound, runtimeTarget),
-    [previewFrame, previewBound, runtimeTarget],
+    () => getPreviewCamera(previewFrame, runtimeTarget),
+    [previewFrame, runtimeTarget],
   );
   const target = useMemo(
-    () => getTarget(previewFrame, previewBound, runtimeTarget),
-    [previewFrame, previewBound, runtimeTarget],
+    () => getTarget(previewFrame, runtimeTarget),
+    [previewFrame, runtimeTarget],
   );
 
   useEffect(() => {
@@ -189,18 +146,16 @@ export function PreviewCamera({
 export function PreviewControls({
   controlsElementRef,
   previewFrame,
-  previewBound,
   runtimeTarget,
 }: {
   controlsElementRef: RefObject<HTMLElement | null>;
   previewFrame?: PreviewFrame;
-  previewBound?: PreviewBound;
   runtimeTarget?: PreviewFrameTarget | null;
 }) {
   const [controlsElement, setControlsElement] = useState<HTMLElement>();
   const target = useMemo(
-    () => getTarget(previewFrame, previewBound, runtimeTarget),
-    [previewFrame, previewBound, runtimeTarget],
+    () => getTarget(previewFrame, runtimeTarget),
+    [previewFrame, runtimeTarget],
   );
 
   useEffect(() => {

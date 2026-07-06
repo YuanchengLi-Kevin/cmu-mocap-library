@@ -57,7 +57,6 @@ export function MotionPreviewScene({
       <color attach="background" args={["#f4f4f5"]} />
       <PreviewCamera
         previewFrame={preview.previewFrame}
-        previewBound={preview.previewBound}
         runtimeTarget={runtimeTarget}
       />
       <ambientLight intensity={1.8} />
@@ -72,7 +71,6 @@ export function MotionPreviewScene({
       <PreviewControls
         controlsElementRef={controlsElementRef}
         previewFrame={preview.previewFrame}
-        previewBound={preview.previewBound}
         runtimeTarget={runtimeTarget}
       />
     </>

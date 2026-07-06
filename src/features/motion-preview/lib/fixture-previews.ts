@@ -8,7 +8,6 @@ import path from "node:path";
 import type {
   MotionPreview,
   MotionPreviewPage,
-  PreviewBound,
   PreviewFrame,
 } from "../types/motion-preview";
 
@@ -24,7 +23,6 @@ type MotionIndexEntry = {
 type PreviewMetadata = {
   variants?: {
     in_place?: {
-      preview_bound?: PreviewBound;
       preview_frame?: PreviewFrameMetadata;
     };
   };
@@ -33,10 +31,6 @@ type PreviewMetadata = {
 type PreviewFrameMetadata = {
   floor_y: number;
   ceiling_y: number;
-  center_x: number;
-  center_z: number;
-  width: number;
-  depth: number;
 };
 
 const fixtureRoot = path.join(process.cwd(), "public", "fixtures");
@@ -52,29 +46,6 @@ function toSourceId(filename: string) {
   return `cmu:${subjectId}:${trialId}`;
 }
 
-function isNumberTuple3(value: unknown): value is [number, number, number] {
-  return (
-    Array.isArray(value) &&
-    value.length === 3 &&
-    value.every((entry) => typeof entry === "number")
-  );
-}
-
-function isPreviewBound(value: unknown): value is PreviewBound {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const bound = value as PreviewBound;
-
-  return (
-    isNumberTuple3(bound?.center) &&
-    isNumberTuple3(bound?.size) &&
-    typeof bound.radius === "number" &&
-    typeof bound.height === "number"
-  );
-}
-
 function isPreviewFrameMetadata(value: unknown): value is PreviewFrameMetadata {
   if (!value || typeof value !== "object") {
     return false;
@@ -84,11 +55,7 @@ function isPreviewFrameMetadata(value: unknown): value is PreviewFrameMetadata {
 
   return (
     typeof frame.floor_y === "number" &&
-    typeof frame.ceiling_y === "number" &&
-    typeof frame.center_x === "number" &&
-    typeof frame.center_z === "number" &&
-    typeof frame.width === "number" &&
-    typeof frame.depth === "number"
+    typeof frame.ceiling_y === "number"
   );
 }
 
@@ -96,10 +63,6 @@ function toPreviewFrame(frame: PreviewFrameMetadata): PreviewFrame {
   return {
     floorY: frame.floor_y,
     ceilingY: frame.ceiling_y,
-    centerX: frame.center_x,
-    centerZ: frame.center_z,
-    width: frame.width,
-    depth: frame.depth,
   };
 }
 
@@ -112,13 +75,11 @@ async function readPreviewMetadata(filename: string) {
   const metadata = JSON.parse(metadataRaw) as PreviewMetadata;
   const inPlaceVariant = metadata.variants?.in_place;
   const previewFrame = inPlaceVariant?.preview_frame;
-  const previewBound = inPlaceVariant?.preview_bound;
 
   return {
     previewFrame: isPreviewFrameMetadata(previewFrame)
       ? toPreviewFrame(previewFrame)
       : undefined,
-    previewBound: isPreviewBound(previewBound) ? previewBound : undefined,
   };
 }
 
@@ -148,7 +109,7 @@ export async function getFixturePreviewPage({
     pageFiles.map(async (filename) => {
       const sourceId = toSourceId(filename);
       const metadata = metadataBySourceId.get(sourceId);
-      const { previewFrame, previewBound } = await readPreviewMetadata(filename);
+      const { previewFrame } = await readPreviewMetadata(filename);
 
       return {
         id: filename,
@@ -158,7 +119,6 @@ export async function getFixturePreviewPage({
         subject: metadata?.subject_description ?? "Fixture preview",
         glbUrl: `/fixtures/previews/${filename}`,
         previewFrame,
-        previewBound,
       };
     }),
   );

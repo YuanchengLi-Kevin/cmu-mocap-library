@@ -12,5 +12,4 @@ export {
 export type {
   MotionPreview,
   MotionPreviewPage,
-  PreviewBound,
 } from "./types/motion-preview";
