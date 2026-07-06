@@ -14,8 +14,6 @@ import type {
 import { AnimatedGlb } from "./motion-preview-animation";
 import { PreviewCamera, PreviewControls } from "./motion-preview-camera";
 
-export { preloadMotionPreviewAssets } from "./motion-preview-animation";
-
 type MotionPreviewSceneProps = {
   controlsElementRef: RefObject<HTMLElement | null>;
   preview: MotionPreview;

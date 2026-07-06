@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { VirtuosoGrid } from "react-virtuoso";
 import type { GridComponents, ListRange } from "react-virtuoso";
 import { MotionPreviewCard } from "./motion-preview-card";
-import { preloadMotionPreviewAssets } from "./motion-preview-scene";
+import { preloadMotionPreviewAssets } from "./motion-preview-animation";
 import type { MotionPreview, MotionPreviewPage } from "../types/motion-preview";
 
 type MotionPreviewGridProps = {
