@@ -10,6 +10,20 @@ export type PreviewBound = {
   height: number;
 };
 
+export type PreviewFrame = {
+  floorY: number;
+  ceilingY: number;
+  centerX: number;
+  centerZ: number;
+  width: number;
+  depth: number;
+};
+
+export type PreviewFrameTarget = {
+  x: number;
+  z: number;
+};
+
 export type MotionPreview = {
   id: string;
   title: string;
@@ -17,6 +31,7 @@ export type MotionPreview = {
   description: string;
   subject: string;
   glbUrl: string;
+  previewFrame?: PreviewFrame;
   previewBound?: PreviewBound;
 };
 

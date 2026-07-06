@@ -9,6 +9,7 @@ import type {
   MotionPreview,
   MotionPreviewPage,
   PreviewBound,
+  PreviewFrame,
 } from "../types/motion-preview";
 
 type MotionIndexEntry = {
@@ -24,8 +25,18 @@ type PreviewMetadata = {
   variants?: {
     in_place?: {
       preview_bound?: PreviewBound;
+      preview_frame?: PreviewFrameMetadata;
     };
   };
+};
+
+type PreviewFrameMetadata = {
+  floor_y: number;
+  ceiling_y: number;
+  center_x: number;
+  center_z: number;
+  width: number;
+  depth: number;
 };
 
 const fixtureRoot = path.join(process.cwd(), "public", "fixtures");
@@ -64,18 +75,51 @@ function isPreviewBound(value: unknown): value is PreviewBound {
   );
 }
 
-async function readPreviewBound(filename: string) {
+function isPreviewFrameMetadata(value: unknown): value is PreviewFrameMetadata {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const frame = value as PreviewFrameMetadata;
+
+  return (
+    typeof frame.floor_y === "number" &&
+    typeof frame.ceiling_y === "number" &&
+    typeof frame.center_x === "number" &&
+    typeof frame.center_z === "number" &&
+    typeof frame.width === "number" &&
+    typeof frame.depth === "number"
+  );
+}
+
+function toPreviewFrame(frame: PreviewFrameMetadata): PreviewFrame {
+  return {
+    floorY: frame.floor_y,
+    ceilingY: frame.ceiling_y,
+    centerX: frame.center_x,
+    centerZ: frame.center_z,
+    width: frame.width,
+    depth: frame.depth,
+  };
+}
+
+async function readPreviewMetadata(filename: string) {
   const metadataFilename = filename.replace(/_in_place\.glb$/, ".json");
   const metadataRaw = await readFile(
     path.join(fixtureRoot, "previews", metadataFilename),
     "utf8",
   );
   const metadata = JSON.parse(metadataRaw) as PreviewMetadata;
-  const previewBound = metadata.variants?.in_place?.preview_bound;
+  const inPlaceVariant = metadata.variants?.in_place;
+  const previewFrame = inPlaceVariant?.preview_frame;
+  const previewBound = inPlaceVariant?.preview_bound;
 
-  if (isPreviewBound(previewBound)) {
-    return previewBound;
-  }
+  return {
+    previewFrame: isPreviewFrameMetadata(previewFrame)
+      ? toPreviewFrame(previewFrame)
+      : undefined,
+    previewBound: isPreviewBound(previewBound) ? previewBound : undefined,
+  };
 }
 
 export async function getFixturePreviewPage({
@@ -104,7 +148,7 @@ export async function getFixturePreviewPage({
     pageFiles.map(async (filename) => {
       const sourceId = toSourceId(filename);
       const metadata = metadataBySourceId.get(sourceId);
-      const previewBound = await readPreviewBound(filename);
+      const { previewFrame, previewBound } = await readPreviewMetadata(filename);
 
       return {
         id: filename,
@@ -113,6 +157,7 @@ export async function getFixturePreviewPage({
         description: metadata?.description ?? filename,
         subject: metadata?.subject_description ?? "Fixture preview",
         glbUrl: `/fixtures/previews/${filename}`,
+        previewFrame,
         previewBound,
       };
     }),
