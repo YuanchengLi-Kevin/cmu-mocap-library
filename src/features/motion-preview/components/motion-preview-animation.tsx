@@ -226,6 +226,7 @@ export function AnimatedGlb({
 }) {
   const group = useRef<Group>(null);
   const pendingModelDisposal = useRef<PendingModelDisposal | null>(null);
+  const warnedMissingRuntimeTargetForSrc = useRef<string | null>(null);
   const humanoid = useGLTF(humanoidUrl) as LoadedGlb;
   const { animations } = useGLTF(src) as LoadedGlb;
   const model = useMemo(() => {
@@ -259,7 +260,26 @@ export function AnimatedGlb({
   useEffect(() => {
     const action = Object.values(actions)[0];
 
+    const warnMissingRuntimeTargetOnce = (reason: string) => {
+      if (
+        process.env.NODE_ENV === "production" ||
+        warnedMissingRuntimeTargetForSrc.current === src
+      ) {
+        return;
+      }
+
+      warnedMissingRuntimeTargetForSrc.current = src;
+      console.warn("Preview runtime target could not be measured", {
+        src,
+        reason,
+      });
+    };
+
     if (!action) {
+      if (animations.length === 0) {
+        warnMissingRuntimeTargetOnce("No animation clip was found");
+      }
+
       return;
     }
 
@@ -274,12 +294,9 @@ export function AnimatedGlb({
       const rootBonePosition = getPreviewRootBonePosition(model);
 
       if (!rootBonePosition) {
-        if (process.env.NODE_ENV !== "production") {
-          console.warn("Preview root bone not found", {
-            src,
-            expectedBoneName: previewRootBoneName,
-          });
-        }
+        warnMissingRuntimeTargetOnce(
+          `Root bone "${previewRootBoneName}" was not found`,
+        );
 
         return;
       }
@@ -294,7 +311,14 @@ export function AnimatedGlb({
       window.cancelAnimationFrame(animationFrameId);
       action.stop();
     };
-  }, [actions, model, onPreviewFrameTargetChange, previewFrame, src]);
+  }, [
+    actions,
+    animations.length,
+    model,
+    onPreviewFrameTargetChange,
+    previewFrame,
+    src,
+  ]);
 
   return (
     <group ref={group}>

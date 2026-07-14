@@ -10,10 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { MathUtils, Vector3 } from "three";
 import type { PerspectiveCamera as ThreePerspectiveCamera } from "three";
-import type {
-  PreviewFrame,
-  PreviewFrameTarget,
-} from "../types/motion-preview";
+import type { PreviewFrame, PreviewFrameTarget } from "../types/motion-preview";
 
 type PreviewCameraConfig = {
   position: [number, number, number];
@@ -25,8 +22,8 @@ type PreviewCameraConfig = {
 const previewCameraFov = 34;
 const previewFrameTargetX = 0;
 const previewFrameTargetZ = 1.25;
-const previewFramePadding = 3;
-const previewFrameTargetYOffset = 0.7;
+const previewFramePadding = 0.5;
+const previewFrameTargetYOffset = 0.3;
 const defaultPreviewCameraTarget = new Vector3(0, 1.2, 0);
 
 function getPreviewFrameTarget(
@@ -35,7 +32,7 @@ function getPreviewFrameTarget(
   runtimeTarget?: PreviewFrameTarget | null,
 ) {
   const frameHeight = Math.max(
-    previewFrame.ceilingY - previewFrame.floorY,
+    (previewFrame.ceilingY - previewFrame.floorY) * 3,
     0.1,
   );
   const distance =
